@@ -7,6 +7,26 @@ from django.utils import six
 from timezone_field.utils import is_pytz_instance
 
 
+class CastOnAssignDescriptor(object):
+    """
+    A property descriptor which ensures that `field.to_python()` is called on _every_ assignment to the field.
+    This used to be provided by the `django.db.models.subclassing.Creator` class, which in turn
+    was used by the deprecated-in-Django-1.10 `SubfieldBase` class, hence the reimplementation here.
+    Taken from https://stackoverflow.com/a/39471064/5381325
+    """
+
+    def __init__(self, field):
+        self.field = field
+
+    def __get__(self, obj, type=None):
+        if obj is None:
+            return self
+        return obj.__dict__[self.field.name]
+
+    def __set__(self, obj, value):
+        obj.__dict__[self.field.name] = self.field.to_python(value)
+
+
 class TimeZoneField(models.Field):
     """
     Provides database store for pytz timezone objects.
@@ -115,3 +135,7 @@ class TimeZoneField(models.Field):
             except pytz.UnknownTimeZoneError:
                 pass
         raise ValidationError("Invalid timezone '%s'" % value)
+
+    def contribute_to_class(self, cls, name):
+        super(TimeZoneField, self).contribute_to_class(cls, name)
+        setattr(cls, name, CastOnAssignDescriptor(self))
